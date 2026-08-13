@@ -1,7 +1,8 @@
+import { FadeInImage } from '@shared/ui';
+
 import './DealItemSwap.scss';
 
 interface DealItemSwapProps {
-  // «Вы отправляете» / «Вы получите» — подпись над строкой обмена (макет 4.9)
   label: string;
   giveTitle: string;
   giveImageUrl?: string | null;
@@ -9,8 +10,7 @@ interface DealItemSwapProps {
   receiveImageUrl?: string | null;
 }
 
-// Строка обмена экрана сделки (макет 4.9): миниатюры 28×28 отдаваемого и получаемого товаров
-// со стрелкой между названиями. Фото товаров бэкенд не хранит — заглушка-плейсхолдер.
+// фото товаров бэкенд не хранит — на миниатюрах всегда плейсхолдер
 export function DealItemSwap({
   label,
   giveTitle,
@@ -37,7 +37,11 @@ export function DealItemSwap({
 function ItemThumb({ title, imageUrl }: { title: string; imageUrl?: string | null }) {
   return (
     <span className={`deal-swap__thumb${imageUrl ? '' : ' deal-swap__thumb--empty'}`} aria-hidden>
-      {imageUrl ? <img className="deal-swap__thumb-img" src={imageUrl} alt="" /> : (title[0] ?? '')}
+      {imageUrl ? (
+        <FadeInImage className="deal-swap__thumb-img" src={imageUrl} alt="" />
+      ) : (
+        (title[0] ?? '')
+      )}
     </span>
   );
 }

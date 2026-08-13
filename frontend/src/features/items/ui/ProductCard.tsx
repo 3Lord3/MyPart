@@ -1,6 +1,8 @@
-import { ITEM_STATUS_META, type Item } from '@entities/item';
+import type { KeyboardEvent } from 'react';
 
-import { StatusTag } from '@shared/ui';
+import { ITEM_STATUS_META, isItemExchanged, type Item } from '@entities/item';
+
+import { FadeInImage, StatusTag } from '@shared/ui';
 
 import './ProductCard.scss';
 
@@ -11,29 +13,36 @@ interface ProductCardProps {
 
 export function ProductCard({ item, onClick }: ProductCardProps) {
   const statusMeta = ITEM_STATUS_META[item.status];
+  // обменянный товар остаётся в списке как история, но открывать его нечего
+  const exchanged = isItemExchanged(item.status);
+  const label = item.category
+    ? `${item.title}, ${item.category}, ${statusMeta.label}`
+    : `${item.title}, ${statusMeta.label}`;
+
+  const interactiveProps = exchanged
+    ? {}
+    : {
+        role: 'button',
+        tabIndex: 0,
+        onClick,
+        onKeyDown: (event: KeyboardEvent<HTMLElement>) => {
+          if (event.target !== event.currentTarget) return;
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            onClick();
+          }
+        },
+      };
 
   return (
     <article
-      className="product-card"
-      role="button"
-      tabIndex={0}
-      aria-label={
-        item.category
-          ? `${item.title}, ${item.category}, ${statusMeta.label}`
-          : `${item.title}, ${statusMeta.label}`
-      }
-      onClick={onClick}
-      onKeyDown={(event) => {
-        if (event.target !== event.currentTarget) return;
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault();
-          onClick();
-        }
-      }}
+      className={exchanged ? 'product-card product-card--exchanged' : 'product-card'}
+      aria-label={label}
+      {...interactiveProps}
     >
       <div className="product-card__photo">
         {item.imageUrl ? (
-          <img className="product-card__image" src={item.imageUrl} alt={item.title} />
+          <FadeInImage className="product-card__image" src={item.imageUrl} alt={item.title} />
         ) : (
           <div className="product-card__placeholder" aria-hidden />
         )}

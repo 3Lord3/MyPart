@@ -1,9 +1,18 @@
 import { Skeleton } from 'antd';
 import { useNavigate, useParams } from 'react-router';
 
-import { ChainItemView, useChainConfirm } from '@features/chains';
+import {
+  ChainItemView,
+  ExpiredChainState,
+  isChainExpired,
+  receiveOptionQuery,
+  useChainConfirm,
+  useChainVote,
+  useProposalExpiry,
+  useReceiveOption,
+} from '@features/chains';
 
-import { receivesItem, useChain } from '@entities/chain';
+import { receivesItem, useChain, useReplacements } from '@entities/chain';
 
 import { ErrorState } from '@shared/ui';
 
@@ -11,16 +20,34 @@ import { ChainPageHeader } from './ChainPageHeader';
 
 import './ChainDetailPage.scss';
 
-// Экран цепочки (макет 4.7): товар, который пользователь получит в обмене, и переход к схеме
-// участников (макет 4.8). Заголовок страницы — название получаемого товара (макет 4.7).
 export function ChainDetailPage() {
   const { chainId: chainIdParam } = useParams<{ chainId: string }>();
   const navigate = useNavigate();
   const chainId = chainIdParam ? Number(chainIdParam) : undefined;
-  const { data: chain, isLoading, isError, refetch } = useChain(chainId);
-  const { openConfirm } = useChainConfirm(refetch, () => navigate('/exchange-requests'));
+  const receiveRequestId = useReceiveOption();
+  const { data: chain, isLoading: isChainLoading, isError, error, refetch } = useChain(chainId);
+  const { confirmVote, isVoting } = useChainVote(refetch);
+  const { openConfirm, openDecline } = useChainConfirm(
+    refetch,
+    () => navigate('/exchange-requests'),
+    { suppressExpiryToast: true },
+  );
+  // непустой пул — единственный признак вакансии: в теле цепочки отличий после отказа не видно
+  const { data: replacements = [], isLoading: isReplacementsLoading } = useReplacements(chainId, {
+    enabled: chain?.status === 'PROPOSED',
+  });
+  const isLoading = isChainLoading || isReplacementsLoading;
+  // выключенный запрос сохраняет прошлые данные, поэтому статус проверяем и здесь: иначе пул
+  // из кеша продолжит звать выбирать замену на уже собранной цепочке
+  const showReplacementBanner = chain?.status === 'PROPOSED' && replacements.length > 0;
 
-  const received = chain ? receivesItem(chain) : [];
+  useProposalExpiry(
+    chain
+      ? [{ chainId: chain.id, detailStatus: chain.status, deadlineAt: chain.freezeDeadlineAt }]
+      : [],
+  );
+
+  const received = chain ? receivesItem(chain, receiveRequestId) : [];
   const single = received.length === 1 ? received[0] : null;
   const title =
     single?.offeredItemTitle ?? (received.length > 1 ? 'Варианты обмена' : 'Цепочка обмена');
@@ -37,14 +64,33 @@ export function ChainDetailPage() {
       <div className="chain-detail-page__body">
         {isLoading ? (
           <Skeleton active paragraph={{ rows: 6 }} />
+        ) : isChainExpired(error) ? (
+          <ExpiredChainState />
         ) : isError || !chain ? (
           <ErrorState onRetry={refetch} />
         ) : (
           <ChainItemView
             chain={chain}
-            onOpenParticipants={() => navigate(`/chains/${chain.id}/participants`)}
+            receiveRequestId={receiveRequestId}
+            isVoting={isVoting}
+            needsReplacement={showReplacementBanner}
+            onVote={(candidate, active) =>
+              confirmVote(
+                {
+                  chainId: chain.id,
+                  requestId: chain.currentRequestId,
+                  targetRequestId: candidate.requestId,
+                },
+                active,
+              )
+            }
+            onOpenParticipants={() =>
+              navigate(`/chains/${chain.id}/participants${receiveOptionQuery(receiveRequestId)}`)
+            }
             onConfirm={() => openConfirm(chain.id)}
             onProceed={() => navigate(`/chains/${chain.id}/deal`)}
+            onReplace={() => navigate(`/chains/${chain.id}/replacement`)}
+            onDecline={() => openDecline(chain.id, true)}
           />
         )}
       </div>

@@ -185,7 +185,6 @@ describe('RecoveryFlow', () => {
     expect(screen.getByText('login screen')).toBeInTheDocument();
   });
 
-  // короткий пароль на шаге восстановления — ошибка после паузы, а не на каждой букве
   it('shows a password length error after a short new password is typed', async () => {
     const user = userEvent.setup();
     mockedSend.mockResolvedValue({ message: 'code_sent' });
@@ -203,5 +202,18 @@ describe('RecoveryFlow', () => {
     expect(
       await screen.findByText('Пароль должен быть не короче 8 символов', {}, { timeout: 3000 }),
     ).toBeInTheDocument();
+  });
+
+  // анимации в jsdom не исполняются — проверяем только узел шага, на remount которого они держатся
+  it('renders each step in its own animated container', async () => {
+    const user = userEvent.setup();
+    mockedSend.mockResolvedValue({ message: 'code_sent' });
+    const { container } = setup();
+
+    const emailStep = container.querySelector('.auth-flow__step');
+    await sendCode(user);
+    await screen.findByText('Введите код');
+
+    expect(container.querySelector('.auth-flow__step')).not.toBe(emailStep);
   });
 });

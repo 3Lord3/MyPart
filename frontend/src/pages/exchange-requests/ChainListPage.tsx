@@ -2,7 +2,15 @@ import { ArrowLeftOutlined, EditOutlined } from '@ant-design/icons';
 import { Button, Skeleton } from 'antd';
 import { useNavigate, useParams } from 'react-router';
 
-import { useChainConfirm, useChainVote, ChainCard } from '@features/chains';
+import {
+  receiveOptionQuery,
+  useChainConfirm,
+  useChainVote,
+  useProposalExpiry,
+  ChainCard,
+  chainDeadlinePurpose,
+  type DeadlinePurpose,
+} from '@features/chains';
 
 import {
   approvedVotes,
@@ -10,19 +18,20 @@ import {
   isHardLocked,
   useChains,
   useExchangeOptions,
+  useReplacementsForChains,
+  type Chain,
   type ExchangeOptions,
+  type ReplacementOption,
 } from '@entities/chain';
 import { useRequest } from '@entities/exchangeRequest';
 import { useItems } from '@entities/item';
 
-import { EmptyState, ErrorState } from '@shared/ui';
+import { EmptyState, ErrorState, FadeInImage } from '@shared/ui';
 
 import './ChainListPage.scss';
 
-// Варианты обмена по заявке (PROJECT.md §2.6, макет 4.6): пул кандидатов следующего звена,
-// на каждого можно откликнуться или отозвать отклик. Когда одна из цепочек замкнулась
-// (PROPOSED) или заморожена — остальные варианты приглушены и недоступны; при заморозке
-// сделки дополнительно баннер, а кнопка правки запроса заблокирована (SOFT-LOCK §5.4/§5.5).
+// как только одна из цепочек замкнулась или заморожена, остальные варианты заявки
+// приглушаются и становятся недоступны
 export function ChainListPage() {
   const { requestId: requestIdParam } = useParams<{ requestId: string }>();
   const navigate = useNavigate();
@@ -31,7 +40,7 @@ export function ChainListPage() {
   const optionsQuery = useExchangeOptions(requestId);
   const itemsQuery = useItems();
   const { confirmVote, isVoting } = useChainVote();
-  const { openConfirm, confirmNow, openDecline, isConfirming } = useChainConfirm();
+  const { openConfirm } = useChainConfirm();
 
   const request = requestQuery.data;
   const options = optionsQuery.data ?? [];
@@ -41,27 +50,63 @@ export function ChainListPage() {
   // деталь заявки не отдаёт снимок отдаваемого товара — берём его из кеша товаров
   const offeredItem = itemsQuery.data?.items.find((item) => item.id === request?.offeredItemId);
 
-  // exchange-options не отдаёт число согласий второго раунда: для PROPOSED-цепочек оно
-  // считается из participants[].vote детали (GET /chains/{id}) — см. approvedCountFor
-  const proposedChainIds = options
+  // ни счётчика согласий, ни дедлайнов exchange-options не отдаёт — их берём из детали цепочки
+  const detailChainIds = options
+    .filter((entry) => entry.status === 'PROPOSED' || entry.status === 'FROZEN')
+    .map((entry) => entry.chainId);
+  const detailQueries = useChains(detailChainIds);
+  const detailByChain = new Map<number, Chain>();
+  detailQueries.forEach((query, index) => {
+    if (query.data) detailByChain.set(detailChainIds[index], query.data);
+  });
+
+  // пул замен отдаётся только актору: на его карточке кнопка «Требуется действие» зовёт
+  // выбрать замену вместо подтверждения, у остальных пул пуст и подтверждение не заменяется
+  const replacementChainIds = options
     .filter((entry) => entry.status === 'PROPOSED')
     .map((entry) => entry.chainId);
-  const proposedQueries = useChains(proposedChainIds);
-  const approvedByChain = new Map<number, number>();
-  proposedQueries.forEach((query, index) => {
-    if (query.data) approvedByChain.set(proposedChainIds[index], approvedVotes(query.data));
+  const replacementQueries = useReplacementsForChains(replacementChainIds);
+  const replacementByChain = new Map<number, ReplacementOption[]>();
+  replacementQueries.forEach((query, index) => {
+    if (query.data) replacementByChain.set(replacementChainIds[index], query.data);
   });
+
+  useProposalExpiry(
+    options.map((entry) => ({
+      chainId: entry.chainId,
+      listStatus: entry.status,
+      detailStatus: detailByChain.get(entry.chainId)?.status,
+      deadlineAt: detailByChain.get(entry.chainId)?.freezeDeadlineAt,
+    })),
+  );
 
   function approvedCountFor(entry: ExchangeOptions): number | undefined {
     if (isHardLocked(entry.status)) return entry.length;
-    return approvedByChain.get(entry.chainId);
+    const detail = detailByChain.get(entry.chainId);
+    return detail ? approvedVotes(detail) : undefined;
+  }
+
+  function deadlineAtFor(entry: ExchangeOptions): string | null | undefined {
+    return detailByChain.get(entry.chainId)?.freezeDeadlineAt;
+  }
+
+  function deadlinePurposeFor(entry: ExchangeOptions): DeadlinePurpose | undefined {
+    const detail = detailByChain.get(entry.chainId);
+    return detail ? chainDeadlinePurpose(detail) : undefined;
+  }
+
+  // непустой пул — единственный признак вакансии: в теле цепочки отказ не виден
+  function needsReplacementFor(entry: ExchangeOptions): boolean {
+    return entry.status === 'PROPOSED' && (replacementByChain.get(entry.chainId)?.length ?? 0) > 0;
   }
 
   if (requestQuery.isLoading || optionsQuery.isLoading || itemsQuery.isLoading) {
     return (
       <div className="chain-list-page">
         <ChainListHeader onBack={() => navigate('/exchange-requests')} />
-        <Skeleton active paragraph={{ rows: 6 }} />
+        <div className="chain-list-page__body">
+          <Skeleton active paragraph={{ rows: 6 }} />
+        </div>
       </div>
     );
   }
@@ -80,9 +125,8 @@ export function ChainListPage() {
     );
   }
 
-  // бэкенд отдаёт цепочки по дате создания (repository.go: ORDER BY c.created_at DESC), а экран
-  // показывает их по убыванию вероятности (DESIGN.md §4.6). Сортировка стабильная, поэтому варианты
-  // одной цепочки сохраняют исходный порядок между собой
+  // бэкенд отдаёт цепочки по дате создания, а экран показывает их по убыванию вероятности;
+  // сортировка стабильная, поэтому варианты одной цепочки сохраняют исходный порядок
   const receiveOptions = options
     .flatMap((entry) => entry.receiveOptions.map((option) => ({ entry, option })))
     .sort((a, b) => b.entry.score - a.entry.score);
@@ -93,9 +137,13 @@ export function ChainListPage() {
       <div className="chain-list-page__body">
         {request ? (
           <div className="chain-list-page__summary">
-            {/* миниатюра отдаваемого товара — 40×40, radius-sm (макет 4.6) */}
+            {/* миниатюра отдаваемого товара — 40×40, radius-sm */}
             {offeredItem?.imageUrl ? (
-              <img className="chain-list-page__summary-photo" src={offeredItem.imageUrl} alt="" />
+              <FadeInImage
+                className="chain-list-page__summary-photo"
+                src={offeredItem.imageUrl}
+                alt=""
+              />
             ) : (
               <div className="chain-list-page__summary-photo" aria-hidden />
             )}
@@ -131,21 +179,24 @@ export function ChainListPage() {
             description="Попробуйте изменить запрос позже"
           />
         ) : (
-          <div className="chain-list-page__list">
+          <div className="chain-list-page__list motion-cascade">
             {receiveOptions.map(({ entry, option }) => (
               <ChainCard
                 key={`${entry.chainId}-${option.requestId}`}
                 options={entry}
                 option={option}
                 isVoting={isVoting}
-                isConfirming={isConfirming}
                 locked={hasAssembled && !isAssembled(entry.status)}
                 approvedCount={approvedCountFor(entry)}
-                onOpen={() => navigate(`/chains/${entry.chainId}`)}
+                deadlineAt={deadlineAtFor(entry)}
+                deadlinePurpose={deadlinePurposeFor(entry)}
+                needsReplacement={needsReplacementFor(entry)}
+                onOpen={() =>
+                  navigate(`/chains/${entry.chainId}${receiveOptionQuery(option.requestId)}`)
+                }
                 onProceed={() => navigate(`/chains/${entry.chainId}/deal`)}
                 onConfirm={(chainId) => openConfirm(chainId)}
-                onConfirmNow={(chainId) => confirmNow(chainId)}
-                onDecline={(chainId) => openDecline(chainId)}
+                onReplace={() => navigate(`/chains/${entry.chainId}/replacement`)}
                 onVote={(active) =>
                   confirmVote(
                     {

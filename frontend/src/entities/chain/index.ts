@@ -8,10 +8,12 @@ export {
   hasDeal,
   isAssembled,
   isHardLocked,
+  isFrozenReplacement,
   myConfirmVote,
   myParticipant,
   needsMyAction,
   needsShipment,
+  nextInRing,
   receivesItem,
   sourceParticipant,
   VACANCY_META,
@@ -28,10 +30,14 @@ export {
   type ExchangeOption,
   type ExchangeOptions,
   type FulfillmentResult,
+  type ReplacementOption,
+  type SelectReplacementResult,
   type VotePayload,
   type VoteValue,
 } from './model';
+export { formatRemaining } from './deadline';
 export { participantAlias, type ParticipantAlias } from './alias';
+export { invalidateChainQueries } from './invalidate';
 export {
   confirmChain,
   confirmHandoff,
@@ -39,14 +45,16 @@ export {
   declineChain,
   fetchChain,
   fetchExchangeOptions,
-  thinkChain,
+  fetchReplacements,
+  selectReplacement,
   voteForRequest,
   withdrawVote,
 } from './api';
-export type { ThinkResult } from './api';
 export {
   chainQueryOptions,
   useChain,
   useChains,
   useExchangeOptions,
+  useReplacements,
+  useReplacementsForChains,
 } from './hooks';

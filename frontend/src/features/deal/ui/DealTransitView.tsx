@@ -9,10 +9,14 @@ import {
   type ChainParticipant,
 } from '@entities/chain';
 
+import { FadeInImage } from '@shared/ui';
+
 import { useDealFulfillment } from '../model/useDealFulfillment';
 import { useDispute } from '../model/useDispute';
 import { usePickupPoint } from '../model/usePickupPoint';
 
+import { DealBarcode } from './DealBarcode';
+import { DealDisputeModal } from './DealDisputeModal';
 import { DealItemSwap } from './DealItemSwap';
 import { DealPickupCard } from './DealPickupCard';
 import { DealSafetyBanner } from './DealSafetyBanner';
@@ -30,8 +34,7 @@ interface DealTransitViewProps {
   onOpenDetails: () => void;
 }
 
-// Статусы доставки товаров экрана сделки: пилюля по статусу заявки владельца товара (DEAL-PLAN.md
-// §4.3). Подпись текстом обязательна — статус не передаётся одним цветом (DESIGN.md §1.8).
+// подпись текстом обязательна — статус не передаётся одним цветом
 function deliveryPill(status: ChainParticipant['requestStatus']): {
   label: string;
   tone: 'warning' | 'accent' | 'success';
@@ -47,10 +50,6 @@ function deliveryPill(status: ChainParticipant['requestStatus']): {
   }
 }
 
-// Экраны «Товары в пути» и «Все товары доставлены» (макет 4.9): пока отправили не все — ждём
-// остальных со статусом доставки каждого товара и заблокированной кнопкой получения, когда все
-// отправили — «Все товары доставлены» и кнопка «Я забрал товар». Кнопки-заглушки вместо ПВЗ
-// (DEAL-PLAN.md §4.5): «Я забрал товар» дёргает POST /chains/{id}/receipt.
 export function DealTransitView({ chain, state, onOpenDetails }: DealTransitViewProps) {
   const { modal } = AntApp.useApp();
   const { confirmReceipt, isFulfilling } = useDealFulfillment(chain);
@@ -87,35 +86,37 @@ export function DealTransitView({ chain, state, onOpenDetails }: DealTransitView
   };
 
   const openDisputeConfirm = () => {
-    modal.confirm({
-      title: 'Открыть спор?',
-      content:
-        'Мы передадим ваше обращение в службу поддержки и свяжемся с вами в течение 24 часов.',
-      okText: 'Открыть спор',
-      okButtonProps: { danger: true },
-      cancelText: 'Отмена',
+    dispute.current = modal.confirm({
+      icon: null,
       centered: true,
-      onOk: () => {
-        openDispute();
-        dispute.current = modal.confirm({
-          icon: null,
-          centered: true,
-          width: 311,
-          content: (
-            <DealSuccessModal
-              emoji="🛠"
-              title="Жалоба отправлена"
-              text="Мы получили ваше обращение и свяжемся с вами в течение 24 часов, чтобы разобраться в ситуации."
-              onClose={closeDisputeModal}
-            />
-          ),
-          footer: null,
-        });
-      },
+      width: 311,
+      content: (
+        <DealDisputeModal
+          onClose={closeDisputeModal}
+          onConfirm={() => {
+            openDispute();
+            closeDisputeModal();
+            dispute.current = modal.confirm({
+              icon: null,
+              centered: true,
+              width: 311,
+              content: (
+                <DealSuccessModal
+                  emoji="🛠"
+                  title="Жалоба отправлена"
+                  text="Мы получили ваше обращение и свяжемся с вами в течение 24 часов, чтобы разобраться в ситуации."
+                  onClose={closeDisputeModal}
+                />
+              ),
+              footer: null,
+            });
+          }}
+        />
+      ),
+      footer: null,
     });
   };
 
-  // пока отправили не все — ждём остальных (макеты B/C «Товары в пути»)
   if (state.status === 'shipped-waiting') {
     return (
       <div className="deal-transit">
@@ -128,8 +129,8 @@ export function DealTransitView({ chain, state, onOpenDetails }: DealTransitView
         </div>
 
         <DealSafetyBanner
-          label="Сделка защищена"
-          message="Пользователи смогут получить товары только тогда, когда все товары будут доставлены."
+          label="Ваш товар в безопасности"
+          message="Ваш товар в безопасности: товары не будут отправлены, пока все участники не принесли их."
         />
 
         <section className="deal-transit__section">
@@ -148,6 +149,7 @@ export function DealTransitView({ chain, state, onOpenDetails }: DealTransitView
                   <span className="deal-transit__item-main">
                     <span className="deal-transit__item-name">{participant.offeredItemTitle}</span>
                     <span
+                      key={pill.label}
                       className={`deal-transit__item-pill deal-transit__item-pill--${pill.tone}`}
                     >
                       {pill.label}
@@ -180,21 +182,22 @@ export function DealTransitView({ chain, state, onOpenDetails }: DealTransitView
     );
   }
 
-  // in-transit: все отправили, мой товар уже в пункте выдачи — могу забрать
   const me = myParticipant(chain);
   const source = sourceParticipant(chain);
-  // в гонке статусов источник мог быть ещё LOCKED — кнопку держим заблокированной до рефетча (§11)
+  // в гонке статусов источник мог быть ещё LOCKED — кнопку держим заблокированной до рефетча
   const canReceive = source?.requestStatus === 'IN_PROGRESS';
 
   return (
     <div className="deal-transit">
+      <DealBarcode chainId={chain.id} kind="receipt" />
+
       <div className="deal-hero deal-hero--success">
         <p className="deal-hero__icon" aria-hidden>
           ✅
         </p>
-        <p className="deal-hero__title">Все товары доставлены</p>
+        <p className="deal-hero__title">Ваш товар доставлен</p>
         <p className="deal-hero__text">
-          Ваш товар уже в пункте выдачи. Заберите его в удобное время.
+          Ваш товар уже в пункте выдачи. Проверьте его в удобное время.
         </p>
       </div>
 
@@ -230,7 +233,7 @@ export function DealTransitView({ chain, state, onOpenDetails }: DealTransitView
           disabled={!canReceive}
           onClick={confirmReceipt}
         >
-          Я забрал товар
+          Товар устраивает
         </Button>
         {canReceive ? (
           <p className="deal-actions__hint">
@@ -254,7 +257,7 @@ function ItemThumb({ participant }: { participant: ChainParticipant }) {
       aria-hidden
     >
       {participant.imageUrl ? (
-        <img className="deal-transit__thumb-img" src={participant.imageUrl} alt="" />
+        <FadeInImage className="deal-transit__thumb-img" src={participant.imageUrl} alt="" />
       ) : (
         (participant.offeredItemTitle[0] ?? '')
       )}

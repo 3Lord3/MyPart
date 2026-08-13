@@ -2,7 +2,7 @@ import { ArrowRightOutlined } from '@ant-design/icons';
 
 import { REQUEST_STATUS_META, type ExchangeRequest } from '@entities/exchangeRequest';
 
-import { StatusTag } from '@shared/ui';
+import { FadeInImage, StatusTag } from '@shared/ui';
 
 import './RequestCard.scss';
 
@@ -32,14 +32,14 @@ export function RequestCard({ request, offeredItemImageUrl, onClick }: RequestCa
     >
       <div className="request-card__thumb">
         {offeredItemImageUrl ? (
-          <img className="request-card__image" src={offeredItemImageUrl} alt="" />
+          <FadeInImage className="request-card__image" src={offeredItemImageUrl} alt="" />
         ) : (
           <div className="request-card__placeholder" aria-hidden />
         )}
       </div>
       <div className="request-card__col">
         {/* отдаваемый товар и статус — в одной строке, желаемое — во второй со стрелкой вместо
-            подписей: на узких экранах всё вместе в одну строку не умещается (DESIGN.md §4.5) */}
+            подписей: на узких экранах всё вместе в одну строку не умещается */}
         <div className="request-card__head">
           <span className="request-card__offer">{request.offeredItemTitle ?? 'Товар удалён'}</span>
           <StatusTag tone={statusMeta.tone}>{statusMeta.label}</StatusTag>

@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { AppstoreOutlined, SwapOutlined, UserOutlined } from '@ant-design/icons';
 import { NavLink, Outlet, useLocation } from 'react-router';
 
+import { useScreenMotionClass } from '@shared/lib/useScreenMotion';
 import { BrandLogo } from '@shared/ui';
 import './AppLayout.scss';
 
@@ -22,8 +23,7 @@ function navClassName({ isActive }: { isActive: boolean }) {
   return `app-nav-item${isActive ? ' app-nav-item--active' : ''}`;
 }
 
-// на экранах форм глобальная шапка не показывается — у экрана своя (назад + заголовок);
-// меню (нижний таб-бар / боковое) остаётся на всех брейкпоинтах
+// у форм своя шапка (назад + заголовок), но меню остаётся на всех брейкпоинтах
 const FORM_SCREEN_PATTERNS = [
   /^\/products\/new$/,
   /^\/products\/[^/]+\/edit$/,
@@ -31,13 +31,13 @@ const FORM_SCREEN_PATTERNS = [
   /^\/exchange-requests\/[^/]+\/edit$/,
 ];
 
-// экраны цепочки — полноэкранный подпоток (макеты 4.7/4.8/4.9): у экрана своя шапка, а низ занимает
-// кнопка действия, поэтому глобальной шапки и таб-бара нет. Макеты только мобильные — боковое
-// меню десктопа остаётся: там кнопка действия ничего не перекрывает
+// низ экранов цепочки занимает кнопка действия, поэтому таб-бара нет; боковое меню десктопа
+// остаётся — там кнопка ничего не перекрывает
 const FULL_SCREEN_PATTERNS = [/^\/chains\/[^/]+(\/(participants|deal(\/(shipments|receipts))?))?$/];
 
 export function AppLayout() {
   const { pathname } = useLocation();
+  const screenMotionClass = useScreenMotionClass();
   const isFullScreen = FULL_SCREEN_PATTERNS.some((pattern) => pattern.test(pathname));
   const isFormScreen = FORM_SCREEN_PATTERNS.some((pattern) => pattern.test(pathname));
 
@@ -63,7 +63,10 @@ export function AppLayout() {
           </nav>
         </aside>
         <main className="app-content">
-          <Outlet />
+          {/* key перемонтирует узел при навигации — на этом держится enter-анимация экрана */}
+          <div key={pathname} className={`app-content__screen ${screenMotionClass}`}>
+            <Outlet />
+          </div>
         </main>
       </div>
       {!isFullScreen ? (

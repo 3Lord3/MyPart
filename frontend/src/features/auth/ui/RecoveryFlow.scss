@@ -1,3 +1,10 @@
+// повторяет колонку .auth-page__card: без этого вложение убрало бы отступы между блоками шага
+.auth-flow__step {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+}
+
 .recovery-title {
   font-size: var(--font-size-h2);
   font-weight: var(--font-weight-semibold);
@@ -27,7 +34,7 @@
 }
 
 .recovery-resend__link {
-  // тач-таргет 44×44 через padding + компенсирующий negative margin (DESIGN.md §1.8)
+  // тач-таргет 44×44 через padding + компенсирующий negative margin
   padding: 14px 8px;
   margin: -14px -8px;
   border: none;

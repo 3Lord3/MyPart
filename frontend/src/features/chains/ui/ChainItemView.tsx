@@ -11,46 +11,65 @@ import {
   needsShipment,
   receivesItem,
   type Chain,
+  type ChainParticipant,
 } from '@entities/chain';
 
-import { ProbabilityBadge } from '@shared/ui';
+import { plural } from '@shared/lib/plural';
+import { FadeInImage, ProbabilityBadge } from '@shared/ui';
+
+import { chainDeadlinePurpose } from '../model/useDeadlineLabel';
 
 import { ConsentBadge } from './ConsentBadge';
+import { DeadlineRow } from './DeadlineRow';
 
 import './ChainItemView.scss';
 
 interface ChainItemViewProps {
   chain: Chain;
+  // заявка выбранного варианта получения: экран показывает именно её товар
+  receiveRequestId?: number;
+  isVoting: boolean;
+  // непустой пул замен — вакансия в цепочке: плашка и кнопка ведут на выбор замены
+  needsReplacement?: boolean;
+  onVote: (candidate: ChainParticipant, active: boolean) => void;
   onOpenParticipants: () => void;
   onConfirm: () => void;
   onProceed: () => void;
+  onReplace: () => void;
+  onDecline: () => void;
 }
 
-// Экран цепочки (макет 4.7): товар, который пользователь получит в обмене, его описание
-// и переход к схеме участников (макет 4.8). Пока цепочка CANDIDATE, получаемое звено — пул
-// кандидатов: товар однозначен только когда кандидат один (собранная цепочка, §3.1).
-// На PROPOSED внизу — «Требуются действия» (или «Вы подтвердили · ждём остальных», если голос
-// уже поставлен), на FROZEN — «Требуется действие» (пора отправлять), на IN_PROGRESS/COMPLETED —
-// плашка блокировки (кроме COMPLETED), бейдж «M/M согласий» и «Перейти к сделке» (SOFT-LOCK §7,
-// DEAL-PLAN.md §5.1).
 export function ChainItemView({
   chain,
+  receiveRequestId,
+  isVoting,
+  needsReplacement,
+  onVote,
   onOpenParticipants,
   onConfirm,
   onProceed,
+  onReplace,
+  onDecline,
 }: ChainItemViewProps) {
   const { token } = theme.useToken();
-  const received = receivesItem(chain);
+  const received = receivesItem(chain, receiveRequestId);
   const single = received.length === 1 ? received[0] : null;
   const assembled = isAssembled(chain.status);
   const hardLocked = isHardLocked(chain.status);
   const shipRequired = needsShipment(chain.status);
+  // approved/rejected отклик снять нельзя (DELETE их не снимает) — кнопки для них нет
+  const voteCandidate =
+    received.find((candidate) => candidate.vote === 'pending') ??
+    received.find((candidate) => !candidate.vote) ??
+    null;
+  const canVote = chain.status === 'CANDIDATE' && voteCandidate !== null;
+  const withdraw = voteCandidate?.vote === 'pending';
 
   return (
     <div className="chain-item">
       <div className="chain-item__photo">
         {single?.imageUrl ? (
-          <img
+          <FadeInImage
             className="chain-item__photo-img"
             src={single.imageUrl}
             alt={single.offeredItemTitle}
@@ -63,16 +82,20 @@ export function ChainItemView({
       <div className="chain-item__head">
         <h2 className="chain-item__title">
           {single?.offeredItemTitle ??
-            `Получаете: ${received.length} ${pluralizeVariants(received.length)}`}
+            `Получаете: ${received.length} ${plural(received.length, ['вариант', 'варианта', 'вариантов'])}`}
         </h2>
         <div className="chain-item__meta">
           <span className="chain-item__count">
-            {chain.length} {pluralize(chain.length)} в цепочке
+            {chain.length} {plural(chain.length, ['участник', 'участника', 'участников'])} в цепочке
           </span>
           {assembled ? (
             <span className="chain-item__badges">
               <span className="chain-item__ready">Цепочка собрана</span>
-              <ConsentBadge count={approvedVotes(chain)} total={chain.length} />
+              <ConsentBadge
+                key={approvedVotes(chain)}
+                count={approvedVotes(chain)}
+                total={chain.length}
+              />
             </span>
           ) : (
             <ProbabilityBadge score={chain.score} />
@@ -80,7 +103,19 @@ export function ChainItemView({
         </div>
       </div>
 
-      {hardLocked ? <p className="chain-item__lock">{HARD_LOCK_MESSAGE}</p> : null}
+      {needsReplacement ? (
+        <p className="chain-item__replacement" role="status">
+          Участник отказался. Выберите замену, чтобы продолжить обмен
+        </p>
+      ) : hardLocked ? (
+        <p className="chain-item__lock">{HARD_LOCK_MESSAGE}</p>
+      ) : null}
+
+      <DeadlineRow
+        status={chain.status}
+        deadlineAt={chain.freezeDeadlineAt}
+        purpose={chainDeadlinePurpose(chain)}
+      />
 
       {single?.offeredItemDescription ? (
         <section className="chain-item__section">
@@ -93,7 +128,29 @@ export function ChainItemView({
         <Button className="chain-item__details" size="large" block onClick={onOpenParticipants}>
           Посмотреть всю цепочку
         </Button>
-        {needsMyAction(chain) ? (
+        {canVote && voteCandidate ? (
+          <Button
+            className="chain-item__action"
+            type="primary"
+            size="large"
+            block
+            danger={withdraw}
+            loading={isVoting}
+            onClick={() => onVote(voteCandidate, !withdraw)}
+          >
+            {withdraw ? 'Отозвать отклик' : 'Откликнуться'}
+          </Button>
+        ) : needsReplacement ? (
+          <Button
+            className="chain-item__action"
+            type="primary"
+            size="large"
+            block
+            onClick={onReplace}
+          >
+            Требуется действие
+          </Button>
+        ) : needsMyAction(chain) ? (
           <Button
             className="chain-item__action"
             type="primary"
@@ -104,19 +161,43 @@ export function ChainItemView({
             Требуются действия
           </Button>
         ) : chain.status === 'PROPOSED' && myConfirmVote(chain) === 'approved' ? (
-          <p className="chain-item__confirmed" role="status">
-            Вы подтвердили · ждём остальных
-          </p>
+          <>
+            <p className="chain-item__confirmed" role="status">
+              Вы подтвердили · ждём остальных
+            </p>
+            <Button
+              className="chain-item__decline"
+              type="text"
+              danger
+              size="large"
+              block
+              onClick={onDecline}
+            >
+              Отказаться от сделки
+            </Button>
+          </>
         ) : shipRequired ? (
-          <Button
-            className="chain-item__action"
-            type="primary"
-            size="large"
-            block
-            onClick={onProceed}
-          >
-            Требуется действие
-          </Button>
+          <>
+            <Button
+              className="chain-item__action"
+              type="primary"
+              size="large"
+              block
+              onClick={onProceed}
+            >
+              Требуется действие
+            </Button>
+            <Button
+              className="chain-item__decline"
+              type="text"
+              danger
+              size="large"
+              block
+              onClick={onDecline}
+            >
+              Отказаться от сделки
+            </Button>
+          </>
         ) : hasDeal(chain.status) ? (
           <Button
             className="chain-item__action"
@@ -135,20 +216,4 @@ export function ChainItemView({
       </div>
     </div>
   );
-}
-
-function pluralize(count: number): string {
-  const mod10 = count % 10;
-  const mod100 = count % 100;
-  if (mod10 === 1 && mod100 !== 11) return 'участник';
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return 'участника';
-  return 'участников';
-}
-
-function pluralizeVariants(count: number): string {
-  const mod10 = count % 10;
-  const mod100 = count % 100;
-  if (mod10 === 1 && mod100 !== 11) return 'вариант';
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return 'варианта';
-  return 'вариантов';
 }

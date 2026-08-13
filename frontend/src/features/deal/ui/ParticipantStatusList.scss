@@ -7,7 +7,6 @@
   list-style: none;
 }
 
-// строка участника: подложка и рамка только у текущего пользователя — как на схеме 4.8
 .participant-status__row {
   display: flex;
   flex-direction: column;
@@ -39,7 +38,9 @@
   white-space: nowrap;
 }
 
+// вызывающий ставит key от подписи, поэтому смена статуса проявляется, а не подменяет текст молча
 .participant-status__pill {
+  animation: motion-fade-in var(--motion-duration-base) var(--motion-ease-out) backwards;
   flex-shrink: 0;
   padding: var(--spacing-xs) var(--spacing-sm);
   border-radius: var(--radius-full);

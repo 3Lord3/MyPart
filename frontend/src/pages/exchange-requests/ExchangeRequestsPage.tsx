@@ -14,12 +14,10 @@ import './ExchangeRequestsPage.scss';
 export function ExchangeRequestsPage() {
   const navigate = useNavigate();
   const { data, isLoading, isError, refetch } = useRequests();
-  // заявка не отдаёт снимок отдаваемого товара — берём его из кеша товаров
   const items = useItems().data?.items ?? [];
 
   const requests = data ?? [];
 
-  // тап по карточке открывает «Варианты обмена» (PROJECT.md §2.6), редактирование — кнопкой на той странице
   const openRequest = (requestId: number) => navigate(`/exchange-requests/${requestId}`);
 
   return (
@@ -54,7 +52,7 @@ export function ExchangeRequestsPage() {
           </Button>
         </EmptyState>
       ) : (
-        <div className="requests-page__list">
+        <div className="requests-page__list motion-cascade">
           {requests.map((request) => (
             <RequestCard
               key={request.id}

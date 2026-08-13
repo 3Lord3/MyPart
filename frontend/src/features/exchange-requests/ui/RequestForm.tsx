@@ -3,10 +3,10 @@ import { useImperativeHandle, type Ref } from 'react';
 import { CheckCircleFilled, LockOutlined, PlusOutlined } from '@ant-design/icons';
 import { App as AntApp, Button, Form, Input, Radio, Select, Skeleton } from 'antd';
 
-import { ITEM_STATUS_META } from '@entities/item';
+import { ITEM_STATUS_META, isItemExchanged } from '@entities/item';
 
 import { categoryOptions, DESCRIPTION_MIN_LENGTH } from '@shared/config/categories';
-import { ErrorState } from '@shared/ui';
+import { ErrorState, FadeInImage } from '@shared/ui';
 
 import { useRemoveRequest } from '../model/useRemoveRequest';
 import { useRequestForm } from '../model/useRequestForm';
@@ -45,6 +45,9 @@ export function RequestForm({ requestId, ref }: RequestFormProps) {
     goCreateItem,
   } = useRequestForm(requestId);
   const removeRequest = useRemoveRequest(goToList);
+  // обменянные товары остаются в списке товаров как история — предлагать их в новой
+  // заявке нельзя, поэтому в пикер попадают только неотданные
+  const offerableItems = items.filter((item) => !isItemExchanged(item.status));
 
   useImperativeHandle(ref, () => ({ confirmLeave }), [confirmLeave]);
 
@@ -124,20 +127,19 @@ export function RequestForm({ requestId, ref }: RequestFormProps) {
       <section className="request-form__block">
         <h2 className="request-form__heading">Что вы отдаёте?</h2>
         {isEdit ? (
-          // деталь заявки не отдаёт снимок товара — берём название из кеша товаров
           <p className="request-form__summary">
             {items.find((item) => item.id === request?.offeredItemId)?.title ?? 'Товар не найден'}
           </p>
         ) : (
           <>
-            {items.length > 0 ? (
+            {offerableItems.length > 0 ? (
               <Form.Item
                 className="request-form__items-field"
                 name="offeredItemId"
                 rules={[{ required: true, message: 'Выберите товар' }]}
               >
                 <Radio.Group className="request-form__items" orientation="vertical">
-                  {items.map((item) => (
+                  {offerableItems.map((item) => (
                     <Radio
                       key={item.id}
                       value={item.id}
@@ -146,7 +148,7 @@ export function RequestForm({ requestId, ref }: RequestFormProps) {
                     >
                       <span className="request-form__item-thumb">
                         {item.imageUrl ? (
-                          <img
+                          <FadeInImage
                             className="request-form__item-image"
                             src={item.imageUrl}
                             alt={item.title}
@@ -191,13 +193,11 @@ export function RequestForm({ requestId, ref }: RequestFormProps) {
             { required: true, message: 'Опишите желаемый товар' },
             { max: 500, message: 'Описание не длиннее 500 символов' },
             {
-              // кастомный validator вместо min: antd считает символы до обрезки, а на бэкенд
-              // уходит values.wantedDescription.trim() — 50 пробелов прошли бы через min
               validator(_, value: string | undefined) {
                 if (!value || value.trim().length >= DESCRIPTION_MIN_LENGTH) {
                   return Promise.resolve();
                 }
-                return Promise.reject(new Error('Пожалуйста, опишите желаемое подробнее'));
+                return Promise.reject(new Error('Пожалуйста, опишите подробнее'));
               },
             },
           ]}
